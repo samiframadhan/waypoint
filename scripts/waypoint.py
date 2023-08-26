@@ -11,7 +11,7 @@ from tf.transformations import quaternion_from_euler
 class Waypoints():
     def __init__(self):
         rospy.init_node('waypoint')
-        self.topic_name = "goal"
+        self.topic_name = "move_base_simple/goal"
         self.new_points = list()
         self.current_sequence = 0
         try:
