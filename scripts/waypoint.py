@@ -15,7 +15,7 @@ class Waypoints():
         self.new_points = list()
         self.current_sequence = 0
         try:
-            self.points = rospy.get_param('waypoints/points')
+            self.new_points = rospy.get_param('waypoints/points')
         except KeyError:
             self.start_record_points = True
             self.end_record_points = False
@@ -24,26 +24,7 @@ class Waypoints():
         
         if(self.start_record_points):
             #dont do anything until it finishes record the points needed
-            message = rospy.wait_for_message(self.topic_name, PoseStamped, rospy.Duration(5.0))
-            if not message:
-                rospy.logdebug("Too long to wait the message. This node is automatically destroyed")
-                rospy.signal_shutdown("No message received in " + rospy.Duration(5.0))
-            
-            wait = 'n'
-            while wait != 'y':
-                rospy.loginfo("Enter 'y' to stop recording waypoints")
-                wait = input()
-            
-            if len(self.new_points) == 0:
-                rospy.loginfo("No points added, terminating this node")
-                rospy.signal_shutdown("Im useless now :(")
-            
-            rospy.loginfo(str(len(self.new_points)) + " Points have been added")
-            self.goal_cnt = len(self.new_points)
-            rospy.loginfo("Successfully recorded the waypoints, sending it to move_base...")
-            self.end_record_points = True
-            self.start_record_points = False
-            #TODO: output the recorded points to yaml
+            self.record()
         
         self.client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
         rospy.loginfo("Waiting for move_base action server")
@@ -81,12 +62,21 @@ class Waypoints():
             rospy.loginfo(str(result))
             self.current_sequence += 1
             if self.current_sequence > self.goal_cnt - 1:
-                rospy.loginfo("All destination have been reached, redo? [Y/n]")
+                rospy.loginfo("All destination have been reached, repeat waypoints?[Y/n]")
                 wait = input()
                 if wait == 'y' or 'Y':
-                    self.current_sequence = 0
-                    self.start_nav(self.current_sequence)
-                else :
+                    rospy.loginfo("Redo destination record?[Y/n]")
+                    wait = input()
+                    if wait == 'Y' or 'y':
+                        self.goal_cnt = 0
+                        self.new_points = list()
+                        self.record()
+                        self.current_sequence = 0
+                        self.start_nav(self.current_sequence)
+                    else :
+                        self.current_sequence = 0
+                        self.start_nav(self.current_sequence)
+                else:
                     rospy.signal_shutdown("Navigation done")
             else:
                 self.start_nav(self.current_sequence)
@@ -114,6 +104,29 @@ class Waypoints():
         if status == 9:
             #Goal is lost
             rospy.logerr("Cancel request fulfilled. Goal is fulfilled!")
+
+    def record():
+        message = rospy.wait_for_message(self.topic_name, PoseStamped, rospy.Duration(5.0))
+        if not message:
+            rospy.logdebug("Too long to wait the message. This node is automatically destroyed")
+            rospy.signal_shutdown("No message received in " + rospy.Duration(5.0))
+            
+        wait = 'n'
+        while wait != 'y':
+            rospy.loginfo("Enter 'y' to stop recording waypoints")
+            wait = input()
+        
+        if len(self.new_points) == 0:
+            rospy.loginfo("No points added, terminating this node")
+            rospy.signal_shutdown("Im useless now :(")
+        
+        rospy.loginfo(str(len(self.new_points)) + " Points have been added")
+        self.goal_cnt = len(self.new_points)
+        rospy.loginfo("Successfully recorded the waypoints, sending it to move_base...")
+        rospy.set_param('points', self.new_points)
+        self.end_record_points = True
+        self.start_record_points = False
+        #TODO: output the recorded points to yaml
     
     def start_nav(self, index = 0):
         goal = MoveBaseGoal()
