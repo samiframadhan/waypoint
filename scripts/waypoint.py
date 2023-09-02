@@ -11,7 +11,7 @@ from tf.transformations import quaternion_from_euler
 class Waypoints():
     def __init__(self):
         rospy.init_node('waypoint')
-        self.topic_name = "goal"
+        self.topic_name = "waypoint"
         self.new_points = list()
         self.current_sequence = 0
         try:
@@ -22,40 +22,51 @@ class Waypoints():
             rospy.logerr("No points have provided, listening from " + str(self.topic_name) + " instead")
             self.sub = rospy.Subscriber(self.topic_name, PoseStamped, self.rviz_cb)
         
-        if(self.start_record_points):
-            #dont do anything until it finishes record the points needed
-            message = rospy.wait_for_message(self.topic_name, PoseStamped, rospy.Duration(5.0))
-            if not message:
-                rospy.logdebug("Too long to wait the message. This node is automatically destroyed")
-                rospy.signal_shutdown("No message received in " + rospy.Duration(5.0))
-            
-            wait = 'n'
-            while wait != 'y':
-                rospy.loginfo("Enter 'y' to stop recording waypoints")
-                wait = input()
-            
-            if len(self.new_points) == 0:
-                rospy.loginfo("No points added, terminating this node")
-                rospy.signal_shutdown("Im useless now :(")
-            
-            rospy.loginfo(str(len(self.new_points)) + " Points have been added")
-            self.goal_cnt = len(self.new_points)
-            rospy.loginfo("Successfully recorded the waypoints, sending it to move_base...")
-            self.end_record_points = True
-            self.start_record_points = False
-            #TODO: output the recorded points to yaml
+        user_input = ''
         
-        self.client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
-        rospy.loginfo("Waiting for move_base action server")
+        while user_input.lower() != 'n':
+            rospy.loginfo("Starting sequence...")
+            user_input = input("Press ENTER to start listening to the topic")
+            
+            if user_input.lower() == 'n':
+                rospy.signal_shutdown("Good bye!")
+                return
+            
+            if(self.start_record_points):
+                #dont do anything until it finishes record the points needed
+                message = rospy.wait_for_message(self.topic_name, PoseStamped, rospy.Duration(5.0))
+                # while not message:
+                if not message:
+                    rospy.logdebug("Too long to wait the message. This node is automatically destroyed")
+                    rospy.signal_shutdown("No message received in " + rospy.Duration(5.0))
+                
+                wait = 'n'
+                while wait != 'y':
+                    rospy.loginfo("Enter 'y' to stop recording waypoints")
+                    wait = input()
+                
+                if len(self.new_points) == 0:
+                    rospy.loginfo("No points added, terminating this node")
+                    rospy.signal_shutdown("Im useless now :(")
+                
+                rospy.loginfo(str(len(self.new_points)) + " Points have been added")
+                self.goal_cnt = len(self.new_points)
+                rospy.loginfo("Successfully recorded the waypoints, sending it to move_base...")
+                self.end_record_points = True
+                self.start_record_points = False
+                #TODO: output the recorded points to yaml
+            
+            self.client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
+            rospy.loginfo("Waiting for move_base action server")
 
-        wait = self.client.wait_for_server(rospy.Duration(5.0))
-        if not wait:
-            rospy.logerr("move_base Action Server is not available")
-            rospy.signal_shutdown("move_base Action server is not available")
-            return
-        rospy.loginfo("Connected to the move_base server")
-        rospy.loginfo("Starting navigation to points...")
-        self.start_nav(self.current_sequence)
+            wait = self.client.wait_for_server(rospy.Duration(5.0))
+            if not wait:
+                rospy.logerr("move_base Action Server is not available")
+                rospy.signal_shutdown("move_base Action server is not available")
+                return
+            rospy.loginfo("Connected to the move_base server")
+            rospy.loginfo("Starting navigation to points...")
+            self.start_nav(self.current_sequence)
         
     def active_cb(self):
         rospy.logdebug("Robot currently navigating to the next destination")
@@ -64,6 +75,8 @@ class Waypoints():
         rospy.logdebug("Feedback is received: " + str(feedback))
     
     def done_cb(self, status, result):
+        rospy.loginfo(str(result))
+        rospy.loginfo("done cb called")
         if status == 0:
             #Request pending
             rospy.loginfo(str(result))
@@ -121,6 +134,7 @@ class Waypoints():
         goal.target_pose.header.stamp = rospy.Time.now()
         goal.target_pose.pose = self.new_points[index]
         self.client.send_goal(goal, self.done_cb, self.active_cb, self.feedback_cb)
+        # self.client.send_goal_and_wait(rospy.Duration(1000), rospy.Duration(100))
         if index == 0:
             rospy.loginfo("First destination is sent")
         else:
