@@ -2,11 +2,13 @@
 
 import rospy
 import actionlib
+import time
 
 from actionlib_msgs.msg import GoalStatus
 from move_base_msgs.msg import MoveBaseAction, MoveBaseActionGoal, MoveBaseGoal
 from geometry_msgs.msg import Pose, Point, Quaternion, PoseStamped
 from tf.transformations import quaternion_from_euler
+from actionlib.action_client import ActionClient, CommState, get_name_of_constant
 
 class Waypoints():
     def __init__(self):
@@ -22,23 +24,18 @@ class Waypoints():
             rospy.logerr("No points have provided, listening from " + str(self.topic_name) + " instead")
             self.sub = rospy.Subscriber(self.topic_name, PoseStamped, self.rviz_cb)
         
-        user_input = ''
+        user_input = input("Press ENTER to proceed")
         
         while user_input.lower() != 'n':
             rospy.loginfo("Starting sequence...")
-            user_input = input("Press ENTER to start listening to the topic")
-            
-            if user_input.lower() == 'n':
-                rospy.signal_shutdown("Good bye!")
-                return
             
             if(self.start_record_points):
                 #dont do anything until it finishes record the points needed
-                message = rospy.wait_for_message(self.topic_name, PoseStamped, rospy.Duration(5.0))
-                # while not message:
-                if not message:
-                    rospy.logdebug("Too long to wait the message. This node is automatically destroyed")
-                    rospy.signal_shutdown("No message received in " + rospy.Duration(5.0))
+                retry = 5
+                while rospy.wait_for_message(self.topic_name, PoseStamped, rospy.Duration(5.0)) is False:
+                    rospy.loginfo("No message received yet. max retry = " + str(retry))
+                    if retry == 0:
+                        rospy.signal_shutdown("No message after 5 retries. Exiting...")
                 
                 wait = 'n'
                 while wait != 'y':
@@ -66,7 +63,16 @@ class Waypoints():
                 return
             rospy.loginfo("Connected to the move_base server")
             rospy.loginfo("Starting navigation to points...")
-            self.start_nav(self.current_sequence)
+            rospy.loginfo("sent index" + str(self.current_sequence))
+
+            while self.current_sequence < self.goal_cnt:
+                self.start_nav(self.current_sequence)
+                while self.client.wait_for_result(rospy.Duration(5.0)) is False:
+                    rospy.loginfo("Belum nyampe")
+                
+            self.end_record_points = False
+            self.start_record_points = True
+            rospy.signal_shutdown("Udahan ah")
         
     def active_cb(self):
         rospy.logdebug("Robot currently navigating to the next destination")
@@ -93,25 +99,6 @@ class Waypoints():
             #A Goal is reached
             rospy.loginfo(str(result))
             self.current_sequence += 1
-            if self.current_sequence > self.goal_cnt - 1:
-                rospy.loginfo("All destination have been reached, repeat waypoints?[Y/n]")
-                wait = input()
-                if wait == 'y' or 'Y':
-                    rospy.loginfo("Redo destination record?[Y/n]")
-                    wait = input()
-                    if wait == 'Y' or 'y':
-                        self.goal_cnt = 0
-                        self.new_points = list()
-                        self.record()
-                        self.current_sequence = 0
-                        self.start_nav(self.current_sequence)
-                    else :
-                        self.current_sequence = 0
-                        self.start_nav(self.current_sequence)
-                else:
-                    rospy.signal_shutdown("Navigation done")
-            else:
-                self.start_nav(self.current_sequence)
         
         if status == 4:
             #A Goal is aborted by the action server
